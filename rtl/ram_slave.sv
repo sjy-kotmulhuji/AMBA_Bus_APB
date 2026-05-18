@@ -1,21 +1,21 @@
 `timescale 1ns / 1ps
 
-module bram(
+module bram (
     //RAM Slave <-> APB Master
-    input               pclk,
-    input        [31:0] paddr,
-    input        [31:0] pwdata,
-    input               pwrite,
-    input               penable,
-    input               psel,
-    output  [31:0] prdata,
-    output         pready
+    input         pclk,
+    input  [31:0] paddr,
+    input  [31:0] pwdata,
+    input         pwrite,
+    input         penable,
+    input         psel,
+    output [31:0] prdata,
+    output        pready
 );
     logic [31:0] bmem[0:1024];
 
     assign pready = (penable & psel) ? 1'b1 : 1'b0;
 
-    assign daddr = paddr;
+    assign daddr  = paddr;
 
     always_ff @(posedge pclk) begin
         if (psel && penable && pwrite) begin
@@ -45,8 +45,8 @@ endmodule
 
 //output        pslverr,
 
-    //RAM SLAVE <-> RAM
-    //input        [31:0] drdata,
-    //output logic [31:0] daddr,
-    //output logic [31:0] dwdata,
-    //output logic        dwe
+//RAM SLAVE <-> RAM
+//input        [31:0] drdata,
+//output logic [31:0] daddr,
+//output logic [31:0] dwdata,
+//output logic        dwe

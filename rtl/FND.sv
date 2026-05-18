@@ -14,7 +14,7 @@ module FND (
     output [ 7:0] fnd_data
 );
 
-    localparam [11:0] fnd_odata_addr = 12'h000;
+    localparam [11:0] fnd_odata_addr = 12'h004;
     logic [15:0] fnd_odata_reg;
 
 
@@ -27,7 +27,7 @@ module FND (
         end else begin
             if (pready & pwrite) begin
                 if (paddr[11:0] == fnd_odata_addr) begin
-                    fnd_odata_reg <= pwdata[15:0];
+                    fnd_odata_reg <= pwdata[15:0];  //16bit
                 end
             end
         end
@@ -36,7 +36,7 @@ module FND (
     fnd_controller U_FND_CNTL (
         .clk        (pclk),
         .reset      (prst),
-        .fnd_in_data(fnd_odata_reg),
+        .fnd_in_data(fnd_odata_reg[13:0]),
         .fnd_digit  (fnd_digit),
         .fnd_data   (fnd_data)
     );

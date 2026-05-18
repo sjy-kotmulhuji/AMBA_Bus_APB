@@ -1,17 +1,17 @@
 `timescale 1ns / 1ps
 
 module UART (
-    input         pclk,
-    input         prst,
-    input  [31:0] paddr,
-    input  [31:0] pwdata,   //CPU -> UART TX -> PC
-    input         pwrite,
-    input         penable,
-    input         psel,
-    input         uart_rx,
-    output        uart_tx,
-    output [31:0] prdata,   //PC -> UART RX -> CPU -> FND(pwdata)
-    output        pready
+    input               pclk,
+    input               prst,
+    input        [31:0] paddr,
+    input        [31:0] pwdata,   //CPU -> UART TX -> PC
+    input               pwrite,
+    input               penable,
+    input               psel,
+    input               uart_rx,
+    output logic        uart_tx,
+    output logic [31:0] prdata,   //PC -> UART RX -> CPU -> FND(pwdata)
+    output logic        pready
 );
 
     localparam [11:0] uart_ctl_addr = 12'h000;
@@ -20,183 +20,92 @@ module UART (
     localparam [11:0] uart_txdata_addr = 12'h00c;
     localparam [11:0] uart_rxdata_addr = 12'h010;
 
-    logic [7:0] tx_data_reg, baud_reg, ctl_reg, status_reg, rx_data_reg;
-    logic tx_start, tx_busy, rx_done, b_tick;
-    logic [7:0] rx_data;
+    //레지스터 
+    logic tx_start_reg, rx_done_flag;
+    logic [1:0] baud_reg;
+    logic [7:0] tx_data_reg, rx_data_reg;
+
+    //내부 신호
+    logic tx_busy, tx_done;
+    logic [7:0] rx_data_wire;
+
+
+//    logic [7:0] tx_data_reg, baud_reg, ctl_reg, status_reg, rx_data_reg, rx_data_wire;
+//    logic tx_start, tx_busy, rx_done, b_tick;
+//    logic [7:0] rx_data;
 
     assign pready = (penable & psel) ? 1'b1 : 1'b0;
-    assign prdata = (paddr[11:0] == uart_ctl_addr) ? {24'd0, ctl_reg} : 
-                    (paddr[11:0] == uart_baud_addr) ? {24'd0, baud_reg} : 
-                    (paddr[11:0] == uart_status_addr) ? {24'd0, status_reg} : 
+
+    assign prdata = (paddr[11:0] == uart_ctl_addr) ? {31'd0, tx_start_reg} : 
+                    (paddr[11:0] == uart_baud_addr) ? {30'd0, baud_reg} : 
+                    (paddr[11:0] == uart_status_addr) ? {rx_done_flag, 30'd0, tx_busy} : 
                     (paddr[11:0] == uart_txdata_addr) ? {24'd0, tx_data_reg} : 
                     (paddr[11:0] == uart_rxdata_addr) ? {24'd0, rx_data_reg} : 32'hxxxx_xxxx;
-    assign tx_start = (psel & penable & pwrite & paddr[11:0] == uart_txdata_addr);
+
 
     always_ff @(posedge pclk, posedge prst) begin
         if (prst) begin
             tx_data_reg <= 0;
             rx_data_reg <= 0;
-            ctl_reg     <= 0;
-            status_reg  <= 0;
+            tx_start_reg <= 0;
+            rx_done_flag  <= 0;
             baud_reg    <= 0;
         end else begin
-            case (paddr[11:0])
-                uart_ctl_addr: ctl_reg[0] <= pwdata[0];
-                uart_baud_addr: baud_reg[1:0] <= pwdata[1:0];
-                uart_txdata_addr: tx_data_reg <= pwdata[7:0];
-            endcase
+            //rx 데이터 캡쳐 및 플래그 세팅
+            if(rx_done) begin
+                rx_data_reg <= rx_data_wire;
+                rx_done_flag <= 1'b1;
+            end
+
+            //CPU가 rx 데이터 읽어가면 플래그 내림
+            if(psel && penable && !pwrite && (paddr[11:0] == uart_rxdata_addr)) begin
+                rx_done_flag <= 1'b0;
+            end
+
+            //apb write 동작
+            if(pready && pwrite) begin
+                case(paddr[11:0]) 
+                    uart_ctl_addr: tx_start_reg <= pwdata[0];   //start 신호 받아옴
+                    uart_baud_addr: baud_reg <= pwdata[1:0];   //baudrate 결정
+                    uart_txdata_addr: tx_data_reg <= pwdata[7:0];
+                endcase
+            end else begin
+                //tx_start 1클럭만 유지되도록
+                tx_start_reg <= 1'b0;
+            end
         end
     end
 
     uart_tx U_UART_TX (
         .clk     (pclk),
         .rst     (prst),
-        .tx_start(ctl_reg[0]),
+        .tx_start(tx_start_reg),
         .b_tick  (b_tick),
         .tx_data (tx_data_reg),
         .tx_busy (tx_busy),
         .tx_done (),
-        .uart_tx (uart_out_data)
+        .uart_tx (uart_tx)
     );
 
     uart_rx U_UART_RX (
         .clk    (pclk),
         .rst    (prst),
-        .rx     (uart_in_data),
+        .rx     (uart_rx),
         .b_tick (b_tick),
-        .rx_data(rx_data),
+        .rx_data(rx_data_wire), //그대로 내보내는 거 아니고 내부 wire로 연결
         .rx_done(rx_done)
     );
 
     baud_tick U_BAUD_TICK_GEN (
         .clk     (pclk),
         .rst     (prst),
-        .baud_sel(baud_reg[1:0]),
+        .baud_sel(baud_reg),
         .b_tick  (b_tick)
     );
 
 endmodule
 
-//module UART (
-//    input         pclk,
-//    input         prst,
-//    input  [31:0] paddr,
-//    input  [31:0] pwdata,         //CPU -> UART TX -> PC
-//    input         pwrite,
-//    input         penable,
-//    input         psel,
-//    input         uart_in_data,
-//    output        uart_out_data,
-//    output [31:0] prdata,         //PC -> UART RX -> CPU -> FND(pwdata)
-//    output        pready
-//);
-//
-//    localparam [11:0] uart_ctl_addr = 12'h000;
-//    localparam [11:0] uart_baud_addr = 12'h004;
-//    localparam [11:0] uart_status_addr = 12'h008;
-//    localparam [11:0] uart_txdata_addr = 12'h00c;
-//    localparam [11:0] uart_rxdata_addr = 12'h010;
-//
-//    logic [7:0] tx_data_reg, rx_data_reg, ctl_reg, status_reg, baud_reg;
-//    logic tx_start, tx_busy, rx_done, b_tick;
-//    logic [7:0] rx_data;
-//
-//    assign pready = (penable & psel) ? 1'b1 : 1'b0;
-//    assign prdata = (paddr[11:0] == uart_ctl_addr) ? {24'd0, ctl_reg} : 
-//                    (paddr[11:0] == uart_baud_addr) ? {24'd0, baud_reg} : 
-//                    (paddr[11:0] == uart_status_addr) ? {24'd0, status_reg} : 
-//                    (paddr[11:0] == uart_txdata_addr) ? {24'd0, tx_data_reg} : 
-//                    (paddr[11:0] == uart_rxdata_addr) ? {24'd0, rx_data_reg} : 32'hxxxx_xxxx;
-//    assign tx_start = (psel & penable & pwrite & paddr[11:0] == uart_txdata_addr);
-//
-//    always_ff @(posedge pclk, posedge prst) begin
-//        if (prst) begin
-//            tx_data_reg <= 0;
-//            rx_data_reg <= 0;
-//            ctl_reg     <= 0;
-//            status_reg  <= 0;
-//            baud_reg    <= 0;
-//        end else begin
-//            // 항상 업데이트
-//            status_reg[0] <= tx_busy;
-//            status_reg[7] <= rx_done;
-//            if (rx_done) rx_data_reg <= rx_data;
-//
-//            if (pready) begin
-//                case (paddr[11:0])
-//                    uart_baud_addr: begin
-//                        if (pwrite) baud_reg[1:0] <= pwdata[1:0];
-//                    end
-//                    uart_txdata_addr: begin
-//                        if (pwrite) tx_data_reg <= pwdata[7:0];
-//                    end
-//                endcase
-//            end
-//        end
-//    end
-//
-//    //always_ff @(posedge pclk, posedge prst) begin
-//    //    if (prst) begin
-//    //        tx_data_reg <= 0;
-//    //        rx_data_reg <= 0;
-//    //        ctl_reg     <= 0;
-//    //        status_reg  <= 0;
-//    //        baud_reg    <= 0;
-//    //    end else begin
-//    //        if (pready) begin  //psel, penable
-//    //            case (paddr[11:0])
-//    //                uart_ctl_addr: begin
-//    //                    ctl_reg[0] <= tx_start;
-//    //                end
-//    //                uart_status_addr: begin
-//    //                    status_reg[0] <= tx_busy;
-//    //                    status_reg[7] <= rx_done;
-//    //                end
-//    //                uart_baud_addr: begin
-//    //                    baud_reg[1:0] <= pwdata[1:0];
-//    //                end
-//    //            endcase
-//    //            if (pwrite) begin  //tx에 in
-//    //                if (paddr[11:0] == uart_txdata_addr) begin
-//    //                    tx_data_reg <= pwdata[7:0];
-//    //                end
-//    //            end else begin  //rx에서 out
-//    //                if (paddr[11:0] == uart_rxdata_addr) begin
-//    //                    rx_data_reg <= rx_data;
-//    //                end
-//    //            end
-//    //        end
-//    //    end
-//    //end
-//
-//    uart_tx U_UART_TX (
-//        .clk     (pclk),
-//        .rst     (prst),
-//        .tx_start(ctl_reg[0]),
-//        .b_tick  (b_tick),
-//        .tx_data (tx_data_reg),
-//        .tx_busy (tx_busy),
-//        .tx_done (),
-//        .uart_tx (uart_out_data)
-//    );
-//
-//    uart_rx U_UART_RX (
-//        .clk    (pclk),
-//        .rst    (prst),
-//        .rx     (uart_in_data),
-//        .b_tick (b_tick),
-//        .rx_data(rx_data),
-//        .rx_done(rx_done)
-//    );
-//
-//    baud_tick U_BAUD_TICK_GEN (
-//        .clk     (pclk),
-//        .rst     (prst),
-//        .baud_sel(baud_reg[1:0]),
-//        .b_tick  (b_tick)
-//    );
-//
-//endmodule
+
 
 module uart_rx (
     input        clk,

@@ -9,7 +9,7 @@ module instruction_memory (
 
 
     initial begin
-        $readmemh("uart_mem.mem", rom);
+        $readmemh("apb_final.mem", rom);
         //rom[0] = 32'h004182b3;  //R-Type ADD x5, x3, x4    register_file[5] = register_file[3] + register_file[4] = 3 + 4 = 7  
         //rom[1] = 32'h00812123;  //S-Type SW x2, 2(x8),  SW x2, x8, 2
         //rom[2] = 32'h00212383;  //LW x7, x2, 2
